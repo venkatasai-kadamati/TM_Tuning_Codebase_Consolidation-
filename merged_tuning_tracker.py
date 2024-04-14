@@ -1,35 +1,32 @@
-import pandas as pd
 import numpy as np
+import pandas as pd
 
 
-def load_tuning_tracker(file_path: str, file_name: str) -> pd.DataFrame:
-    """Load and filter the tuning tracker Excel file."""
-    tracker = pd.read_excel(f"{file_path}{file_name}", sheet_name=0)
-    tracker = tracker[tracker["Is Tunable"] == "Yes"].sort_values(
+def read_excel(file_path, sheet_name=0, dtype=str):
+    return pd.read_excel(file_path, sheet_name=sheet_name, dtype=dtype)
+
+
+def filter_tracker(tracker, is_tunable):
+    return tracker[tracker["Is Tunable"] == is_tunable].sort_values(
         by=["Rule ID", "Population Group"]
     )
-    return tracker
 
 
-def load_data_file(
-    file_path: str, file_name: str, sheet_name: int = 0, dtype: type = str
-) -> pd.DataFrame:
-    """Load data from an Excel file."""
-    data = pd.read_excel(f"{file_path}{file_name}", sheet_name=sheet_name, dtype=dtype)
-    return data
-
-
-def create_empty_columns(tracker: pd.DataFrame, columns_to_add: list) -> pd.DataFrame:
-    """Create empty columns in the tracker DataFrame."""
+def create_empty_columns(tracker, columns_to_add):
     for column in columns_to_add:
         tracker[column] = np.nan
     return tracker
 
 
-def calculate_metrics(
-    tracker: pd.DataFrame, delta_data: pd.DataFrame, sample_data: pd.DataFrame
-) -> pd.DataFrame:
-    """Calculate metrics for each row in the tracker DataFrame."""
+def calculate_date_range(data, date_column):
+    earliest_date = data[date_column].min()
+    latest_date = data[date_column].max()
+    first_day_earliest_month = earliest_date.replace(day=1)
+    last_day_latest_month = latest_date.replace(day=1) + pd.offsets.MonthEnd()
+    return f"{first_day_earliest_month.strftime('%m/%d/%Y')} - {last_day_latest_month.strftime('%m/%d/%Y')}"
+
+
+def populate_current_result_info_btl(tracker, delta_data, sample_data):
     for index, row in tracker.iterrows():
         rule = row["Rule ID"]
         population_group = row["Population Group"]
@@ -65,17 +62,7 @@ def calculate_metrics(
         )
 
         alerts = sample_data_filtered.copy()
-        # alerts[parameter_type] = pd.to_numeric(alerts[parameter_type], errors="coerce")
-        # ! test change v1
-        if parameter_type in alerts.columns:
-            alerts[parameter_type] = pd.to_numeric(
-                alerts[parameter_type], errors="coerce"
-            )
-        else:
-            # Handle the case when the column is not present
-            print(
-                f"Column '{parameter_type}' not found in alerts DataFrame. Skipping conversion."
-            )
+        alerts[parameter_type] = pd.to_numeric(alerts[parameter_type], errors="coerce")
 
         prop_interesting = alerts[
             (alerts["Tuning Decision"] == "Interesting")
@@ -96,134 +83,13 @@ def calculate_metrics(
     return tracker
 
 
-def calculate_net_metrics(tracker: pd.DataFrame, sample_data: pd.DataFrame) -> tuple:
-    """Calculate net effectiveness and other metrics."""
-    net_alerts_final = pd.DataFrame()
-
-    for rule in tracker["Rule ID"].unique():
-        tracker_rule = tracker[tracker["Rule ID"] == rule]
-        for group in tracker_rule["Population Group"].unique():
-            tracker_rule_group = tracker_rule[tracker_rule["Population Group"] == group]
-            net_alerts = sample_data[
-                (sample_data["Rule ID"] == rule)
-                & (sample_data["Population Group"] == group)
-            ]
-
-            for index, row in tracker_rule_group.iterrows():
-                param = row["Parameter Type"]
-                oper = row["Operator"]
-                rec = float(row["Recommended Threshold"])
-
-                net_alerts.loc[:, param] = pd.to_numeric(net_alerts[param])
-                if oper == ">=":
-                    condition = net_alerts[param] >= rec
-                elif oper == ">":
-                    condition = net_alerts[param] > rec
-                elif oper == "<=":
-                    condition = net_alerts[param] <= rec
-                elif oper == "<":
-                    condition = net_alerts[param] < rec
-                else:
-                    raise ValueError(f"Unknown operator: {oper}")
-
-                net_alerts = net_alerts[condition]
-
-            net_interesting = len(
-                net_alerts[net_alerts["Tuning Decision"] == "Interesting"]
-            )
-            net_notinteresting = len(
-                net_alerts[net_alerts["Tuning Decision"] == "Not Interesting"]
-            )
-
-            net_alerts_final = pd.concat([net_alerts_final, net_alerts])
-
-            net_effectiveness = (
-                round(
-                    100 * (net_interesting) / (net_interesting + net_notinteresting), 2
-                )
-                if (net_interesting + net_notinteresting) > 0
-                else 0
-            )
-
-            tracker.loc[tracker_rule_group.index, "Net Effectiveness"] = (
-                net_effectiveness
-            )
-
-    return tracker, net_alerts_final
-
-
-def calculate_final_fields(tracker: pd.DataFrame) -> pd.DataFrame:
-    """Calculate final fields in the tracker DataFrame."""
-    tracker["Effectiveness"] = round(
-        100
-        * (tracker["Interesting Alerts"])
-        / (tracker["Interesting Alerts"] + tracker["Not Interesting Alerts"]),
-        2,
-    )
-    tracker["Prop Effectiveness"] = round(
-        100
-        * tracker["Prop Interesting Alerts"]
-        / (tracker["Prop Interesting Alerts"] + tracker["Prop Not Interesting Alerts"]),
-        2,
-    )
-    return tracker
-
-
-def process_btl_tuning_tracker(
-    tracker_file_path: str,
-    tracker_file_name: str,
-    delta_file_path: str,
-    delta_file_name: str,
-    sample_file_path: str,
-    sample_file_name: str,
-    output_file_path: str,
-    output_file_name: str,
-):
-    """Process the BTL tuning tracker and generate the output file."""
-    tracker = load_tuning_tracker(tracker_file_path, tracker_file_name)
-    delta_data = load_data_file(delta_file_path, delta_file_name, sheet_name=1)
-    sample_data = load_data_file(sample_file_path, sample_file_name)
-
-    sample_data["Alert Date"] = pd.to_datetime(sample_data["Alert Date"])
-    earliest_date = sample_data["Alert Date"].min()
-    latest_date = sample_data["Alert Date"].max()
-    first_day_earliest_month = earliest_date.replace(day=1)
-    last_day_latest_month = latest_date.replace(day=1) + pd.offsets.MonthEnd()
-    date_range_value = f"{first_day_earliest_month.strftime('%m/%d/%Y')} - {last_day_latest_month.strftime('%m/%d/%Y')}"
-    tracker["Date Range"] = date_range_value
-
-    columns_to_add = [
-        "Num Alerts Extracted",
-        "Num Alerts Sampled",
-        "Interesting Alerts",
-        "Not Interesting Alerts",
-        "Data Quality Alerts",
-        "Effectiveness",
-        "Prop Interesting Alerts",
-        "Prop Not Interesting Alerts",
-        "Prop Effectiveness",
-        "Net Effectiveness",
-        "Min Val",
-        "Max Val",
-    ]
-    tracker = create_empty_columns(tracker, columns_to_add)
-
-    tracker = calculate_metrics(tracker, delta_data, sample_data)
-    tracker, _ = calculate_net_metrics(tracker, sample_data)
-    tracker = calculate_final_fields(tracker)
-
-    tracker.fillna(0, inplace=True)
-    tracker.to_excel(f"{output_file_path}{output_file_name}", index=False)
-
-
-def calculate_atl_metrics(
-    tracker: pd.DataFrame, dedupe_data: pd.DataFrame
-) -> pd.DataFrame:
-    """Calculate metrics for each row in the ATL tracker DataFrame."""
+def populate_current_result_info_atl(tracker, dedupe_data):
     for index, row in tracker.iterrows():
         rule = row["Rule ID"].upper()
         population_group = row["Population Group"]
-        parameter_type = row["Parameter Type"]
+        # parameter_type = row["Parameter Type"]
+        # !!!! change log v1: the above line is changed to the following line TODO: check if this is correct
+        parameter_type = "Occurrence_Parameter"
         threshold = float(row["Recommended Threshold"])
 
         dedupe_data_filtered = dedupe_data[
@@ -252,16 +118,7 @@ def calculate_atl_metrics(
         )
 
         alerts = dedupe_data_filtered.copy()
-
-        if parameter_type in alerts.columns:
-            alerts[parameter_type] = pd.to_numeric(
-                alerts[parameter_type], errors="coerce"
-            )
-        else:
-            print(
-                f"Column '{parameter_type}' not found in alerts DataFrame. Skipping conversion."
-            )
-            continue
+        alerts[parameter_type] = pd.to_numeric(alerts[parameter_type], errors="coerce")
 
         prop_SAR = alerts[
             (alerts["Tuning Decision"] == "SAR Filed")
@@ -287,10 +144,58 @@ def calculate_atl_metrics(
     return tracker
 
 
-def calculate_atl_net_metrics(
-    tracker: pd.DataFrame, dedupe_data: pd.DataFrame
-) -> tuple:
-    """Calculate net effectiveness, SAR yield, and other metrics for ATL."""
+def calculate_net_effectiveness_btl(tracker, sample_data):
+    for rule in tracker["Rule ID"].unique():
+        tracker_rule = tracker[tracker["Rule ID"] == rule]
+        for group in tracker_rule["Population Group"].unique():
+            tracker_rule_group = tracker_rule[tracker_rule["Population Group"] == group]
+            net_alerts = sample_data[
+                (sample_data["Rule ID"] == rule)
+                & (sample_data["Population Group"] == group)
+            ]
+
+            for index, row in tracker_rule_group.iterrows():
+                # param = row["Parameter Type"]
+                # !!!! change log v1: the above line is changed to the following line TODO: check if this is correct
+                param = "Occurrence_Parameter"
+
+                oper = row["Operator"]
+                rec = float(row["Recommended Threshold"])
+
+                if oper == ">=":
+                    condition = net_alerts[param].astype(float) >= rec
+                elif oper == ">":
+                    condition = net_alerts[param].astype(float) > rec
+                elif oper == "<=":
+                    condition = net_alerts[param].astype(float) <= rec
+                elif oper == "<":
+                    condition = net_alerts[param].astype(float) < rec
+                else:
+                    raise ValueError(f"Unknown operator: {oper}")
+
+                net_alerts = net_alerts[condition]
+
+            net_interesting = len(
+                net_alerts[net_alerts["Tuning Decision"] == "Interesting"]
+            )
+            net_notinteresting = len(
+                net_alerts[net_alerts["Tuning Decision"] == "Not Interesting"]
+            )
+
+            net_effectiveness = (
+                round(100 * net_interesting / (net_interesting + net_notinteresting), 2)
+                if (net_interesting + net_notinteresting) > 0
+                else 0
+            )
+
+            tracker.loc[tracker_rule_group.index, "Net Effectiveness"] = (
+                net_effectiveness
+            )
+
+    return tracker
+
+
+def calculate_net_effectiveness_atl(tracker, dedupe_data):
     net_alerts_final = pd.DataFrame()
 
     for rule in tracker["Rule ID"].unique():
@@ -304,7 +209,10 @@ def calculate_atl_net_metrics(
             net_alerts_count = net_alerts["Alert ID"].nunique()
 
             for index, row in tracker_rule_group.iterrows():
-                param = row["Parameter Type"]
+                # param = row["Parameter Type"]
+                # !!!! change log v1: the above line is changed to the following line TODO: check if this is correct
+                param = "Occurrence_Parameter"
+
                 oper = row["Operator"]
                 rec = float(row["Recommended Threshold"])
 
@@ -379,8 +287,23 @@ def calculate_atl_net_metrics(
     return tracker, net_alerts_final
 
 
-def calculate_atl_final_fields(tracker: pd.DataFrame) -> pd.DataFrame:
-    """Calculate final fields in the ATL tracker DataFrame."""
+def calculate_final_fields_btl(tracker):
+    tracker["Effectiveness"] = round(
+        100
+        * tracker["Interesting Alerts"]
+        / (tracker["Interesting Alerts"] + tracker["Not Interesting Alerts"]),
+        2,
+    )
+    tracker["Prop Effectiveness"] = round(
+        100
+        * tracker["Prop Interesting Alerts"]
+        / (tracker["Prop Interesting Alerts"] + tracker["Prop Not Interesting Alerts"]),
+        2,
+    )
+    return tracker
+
+
+def calculate_final_fields_atl(tracker):
     tracker["Effectiveness"] = round(
         100
         * (tracker["Interesting Alerts"] + tracker["SARs Filed"])
@@ -425,18 +348,63 @@ def calculate_atl_final_fields(tracker: pd.DataFrame) -> pd.DataFrame:
     return tracker
 
 
-def process_atl_tuning_tracker(
-    tracker_file_path: str,
-    tracker_file_name: str,
-    dedupe_file_path: str,
-    dedupe_file_name: str,
-    output_file_path: str,
-    output_file_name: str,
+def process_btl_tuning_tracker(
+    tracker_file_path,
+    tracker_file_name,
+    delta_file_path,
+    delta_file_name,
+    sample_file_path,
+    sample_file_name,
+    output_file_path,
+    output_file_name,
 ):
-    """Process the ATL tuning tracker and generate the output file."""
-    tracker = load_tuning_tracker(tracker_file_path, tracker_file_name)
-    dedupe_data = load_data_file(dedupe_file_path, dedupe_file_name)
-    columns_to_add = [
+    tracker = read_excel(tracker_file_path + tracker_file_name, sheet_name=0)
+    tracker = filter_tracker(tracker, "Yes")
+
+    delta_data = read_excel(delta_file_path + delta_file_name, sheet_name=1)
+    sample_data = read_excel(sample_file_path + sample_file_name, sheet_name=0)
+    sample_data["Alert Date"] = pd.to_datetime(sample_data["Alert Date"])
+
+    tracker["Date Range"] = calculate_date_range(sample_data, "Alert Date")
+
+    columns_to_add_btl = [
+        "Num Alerts Extracted",
+        "Num Alerts Sampled",
+        "Interesting Alerts",
+        "Not Interesting Alerts",
+        "Data Quality Alerts",
+        "Effectiveness",
+        "Prop Interesting Alerts",
+        "Prop Not Interesting Alerts",
+        "Prop Effectiveness",
+        "Net Effectiveness",
+        "Min Val",
+        "Max Val",
+    ]
+    tracker = create_empty_columns(tracker, columns_to_add_btl)
+
+    tracker = populate_current_result_info_btl(tracker, delta_data, sample_data)
+    tracker = calculate_net_effectiveness_btl(tracker, sample_data)
+    tracker = calculate_final_fields_btl(tracker)
+
+    tracker.fillna(0, inplace=True)
+    tracker.to_excel(output_file_path + output_file_name, index=False)
+
+
+def process_atl_tuning_tracker(
+    tracker_file_path,
+    tracker_file_name,
+    dedupe_file_path,
+    dedupe_file_name,
+    output_file_path,
+    output_file_name,
+):
+    tracker = read_excel(tracker_file_path + tracker_file_name, sheet_name=0)
+    tracker = filter_tracker(tracker, "Yes")
+
+    dedupe_data = read_excel(dedupe_file_path + dedupe_file_name, sheet_name=0)
+
+    columns_to_add_atl = [
         "Num Alerts Extracted",
         "SARs Filed",
         "Interesting Alerts",
@@ -459,60 +427,60 @@ def process_atl_tuning_tracker(
         "Proposed Alert Count",
         "Proposed Alert Reduction",
     ]
-    tracker = create_empty_columns(tracker, columns_to_add)
+    tracker = create_empty_columns(tracker, columns_to_add_atl)
 
-    tracker = calculate_atl_metrics(tracker, dedupe_data)
-    tracker, net_alerts_final = calculate_atl_net_metrics(tracker, dedupe_data)
-    tracker = calculate_atl_final_fields(tracker)
+    tracker = populate_current_result_info_atl(tracker, dedupe_data)
+    tracker, net_alerts_final = calculate_net_effectiveness_atl(tracker, dedupe_data)
+    tracker = calculate_final_fields_atl(tracker)
 
     tracker.fillna(0, inplace=True)
-    tracker.to_excel(f"{output_file_path}{output_file_name}", index=False)
+    tracker.to_excel(output_file_path + output_file_name, index=False)
 
-    print(
-        f"Number of unique Alert IDs in the final dataset: {net_alerts_final['Alert ID'].nunique()}"
-    )
+    print(net_alerts_final["Alert ID"].nunique())
 
 
 if __name__ == "__main__":
-    # Usage example for BTL tuning
-    btl_tracker_file_path = "C:/Users/Kadamativ/OneDrive - Crowe LLP/Office_Workspace/TM Tuning Project/code_integration_tm_scripts/Initial Data/Tuning Tracker - BTL/"
+    # Define file paths for BTL
+    btl_tracker_fp = "C:/Users/kadam/Documents/TM_Tuning_Codebase_Consolidation/Initial Data/Tuning Tracker - BTL/"
+
+    btl_tracker_ufp = (
+        "C:/Users/kadam/Documents/TM_Tuning_Codebase_Consolidation/New Data/"
+    )
+
     btl_tracker_file_name = "SAM Tuning - Proposed BTL High Priority Thresholds.xlsx"
-
-    btl_delta_file_path = "C:/Users/Kadamativ/OneDrive - Crowe LLP/Office_Workspace/TM Tuning Project/code_integration_tm_scripts/Initial Data/Tuning Tracker - BTL/"
     btl_delta_file_name = "UAT Alerts - Parsed and Deduped.xlsx"
-
-    btl_sample_file_path = "C:/Users/Kadamativ/OneDrive - Crowe LLP/Office_Workspace/TM Tuning Project/code_integration_tm_scripts/Initial Data/Tuning Tracker - BTL/"
     btl_sample_file_name = "UAT Alerts - Sampled and Decisioned.xlsx"
-
-    btl_output_file_path = "C:/Users/Kadamativ/OneDrive - Crowe LLP/Office_Workspace/TM Tuning Project/code_integration_tm_scripts/New Data Files/"
     btl_output_file_name = "Production BTL Tuning Tracker - With Calculations.xlsx"
 
+    # Process BTL tuning tracker
     process_btl_tuning_tracker(
-        btl_tracker_file_path,
+        btl_tracker_fp,
         btl_tracker_file_name,
-        btl_delta_file_path,
+        btl_tracker_fp,
         btl_delta_file_name,
-        btl_sample_file_path,
+        btl_tracker_fp,
         btl_sample_file_name,
-        btl_output_file_path,
+        btl_tracker_ufp,
         btl_output_file_name,
     )
 
-    # Usage example for ATL tuning
-    atl_tracker_file_path = "C:/Users/Kadamativ/OneDrive - Crowe LLP/Office_Workspace/TM Tuning Project/code_integration_tm_scripts/Initial Data/Tuning Tracker - ATL/"
+    # Define file paths for ATL
+    atl_tracker_fp = "C:/Users/kadam/Documents/TM_Tuning_Codebase_Consolidation/Initial Data/Tuning Tracker - ATL/"
+
+    atl_tracker_ufp = (
+        "C:/Users/kadam/Documents/TM_Tuning_Codebase_Consolidation/New Data/"
+    )
+
     atl_tracker_file_name = "Proposed ATL High Priority Thresholds.xlsx"
-
-    atl_dedupe_file_path = "C:/Users/Kadamativ/OneDrive - Crowe LLP/Office_Workspace/TM Tuning Project/code_integration_tm_scripts/Initial Data/Tuning Tracker - ATL/"
     atl_dedupe_file_name = "Actimize Alert Output - Parsed and Deduped.xlsx"
-
-    atl_output_file_path = "C:/Users/Kadamativ/OneDrive - Crowe LLP/Office_Workspace/TM Tuning Project/code_integration_tm_scripts/New Data Files/"
     atl_output_file_name = "Actimize Tuning Tracker - ATL Calculations.xlsx"
 
+    # Process ATL tuning tracker
     process_atl_tuning_tracker(
-        atl_tracker_file_path,
+        atl_tracker_fp,
         atl_tracker_file_name,
-        atl_dedupe_file_path,
+        atl_tracker_fp,
         atl_dedupe_file_name,
-        atl_output_file_path,
+        atl_tracker_ufp,
         atl_output_file_name,
     )

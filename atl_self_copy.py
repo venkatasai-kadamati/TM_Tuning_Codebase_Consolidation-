@@ -5,18 +5,15 @@ Created on Thu Apr  4 09:15:46 2024
 @author: WalshP
 """
 
-import numpy as np
 import pandas as pd
+import numpy as np
 
 # Provide name for tuning tracker output
-new_tracker_name = "Actimize Tuning Tracker - ATL Calculations - Python - NEW6.xlsx"
+new_tracker_name = "latest_output_atl.xlsx"
 
 # Load in tuning tracker
-tracker_fp = ("C:/Users/kadam/OneDrive - BML MUNJAL UNIVERSITY/Desktop/github_clones/TM_Tuning_Codebase_Consolidation"
-              "-/Initial Data/Tuning Tracker - ATL/")
-tracker_ufp = ("C:/Users/kadam/OneDrive - BML MUNJAL UNIVERSITY/Desktop/github_clones/TM_Tuning_Codebase_Consolidation"
-               "-/New Data")
-
+tracker_fp = "C:/Users/kadam/Documents/TM_Tuning_Codebase_Consolidation/Initial Data/Tuning Tracker - ATL/"
+tracker_ufp = "C:/Users/kadam/Documents/TM_Tuning_Codebase_Consolidation/New Data/"
 tracker_file_name = "Proposed ATL High Priority Thresholds.xlsx"
 tracker = pd.read_excel(f"{tracker_fp}{tracker_file_name}", sheet_name=0)
 tracker.sort_values(by="Rule ID", inplace=True)
@@ -25,8 +22,7 @@ tracker.sort_values(by="Rule ID", inplace=True)
 tracker = tracker[tracker["Is Tunable"] == "Yes"].sort_values(by="Rule ID")
 
 # Load in deduped data
-dedupe_fp = ("C:/Users/kadam/OneDrive - BML MUNJAL UNIVERSITY/Desktop/github_clones/TM_Tuning_Codebase_Consolidation"
-             "-/Initial Data/Tuning Tracker - ATL/")
+dedupe_fp = "C:/Users/kadam/Documents/TM_Tuning_Codebase_Consolidation/Initial Data/Tuning Tracker - ATL/"
 dedupe_file_name = "Actimize Alert Output - Parsed and Deduped.xlsx"
 dedupe_data = pd.read_excel(f"{dedupe_fp}{dedupe_file_name}", sheet_name=0, dtype=str)
 
@@ -62,6 +58,7 @@ for index, row in tracker.iterrows():
     rule = row["Rule ID"].upper()
     population_group = row["Population Group"]
     parameter_type = "Occurrence_Parameter"
+    # parameter_type = row["Parameter Type"]
     operator = row["Operator"]
     threshold = float(row["Recommended Threshold"])
 
@@ -69,7 +66,7 @@ for index, row in tracker.iterrows():
     dedupe_data_filtered = dedupe_data[
         (dedupe_data["Rule ID"].str.upper() == rule)
         & (dedupe_data["Population Group"] == population_group)
-        ]
+    ]
 
     # Calculate the number of alerts for different categories
     tracker.at[index, "Num Alerts Extracted"] = len(dedupe_data_filtered)
@@ -82,7 +79,7 @@ for index, row in tracker.iterrows():
     tracker.at[index, "Not Interesting Alerts"] = len(
         dedupe_data_filtered[
             dedupe_data_filtered["Tuning Decision"] == "Not Interesting"
-            ]
+        ]
     )
     tracker.at[index, "Data Quality Alerts"] = len(
         dedupe_data_filtered[dedupe_data_filtered["Tuning Decision"] == "Data Quality"]
@@ -96,15 +93,15 @@ for index, row in tracker.iterrows():
     prop_SAR = alerts[
         (alerts["Tuning Decision"] == "SAR Filed")
         & (alerts[parameter_type] >= threshold)
-        ].shape[0]
+    ].shape[0]
     prop_interesting = alerts[
         (alerts["Tuning Decision"] == "Interesting")
         & (alerts[parameter_type] >= threshold)
-        ].shape[0]
+    ].shape[0]
     prop_notinteresting = alerts[
         (alerts["Tuning Decision"] == "Not Interesting")
         & (alerts[parameter_type] >= threshold)
-        ].shape[0]
+    ].shape[0]
 
     tracker.at[index, "Prop SARs Filed"] = prop_SAR
     tracker.at[index, "Prop Interesting Alerts"] = prop_interesting
@@ -125,7 +122,7 @@ for rule in tracker["Rule ID"].unique():
         net_alerts = dedupe_data[
             (dedupe_data["Rule ID"] == rule)
             & (dedupe_data["Population Group"] == group)
-            ]
+        ]
         net_alerts_count = net_alerts["Alert ID"].nunique()
 
         for index, row in tracker_rule_group.iterrows():
@@ -212,9 +209,9 @@ tracker["Prop Effectiveness"] = round(
     100
     * (tracker["Prop Interesting Alerts"] + tracker["Prop SARs Filed"])
     / (
-            tracker["Prop SARs Filed"]
-            + tracker["Prop Interesting Alerts"]
-            + tracker["Prop Not Interesting Alerts"]
+        tracker["Prop SARs Filed"]
+        + tracker["Prop Interesting Alerts"]
+        + tracker["Prop Not Interesting Alerts"]
     ),
     2,
 )
@@ -222,9 +219,9 @@ tracker["Prop SAR Yield"] = round(
     100
     * tracker["Prop SARs Filed"]
     / (
-            tracker["Prop SARs Filed"]
-            + tracker["Prop Interesting Alerts"]
-            + tracker["Prop Not Interesting Alerts"]
+        tracker["Prop SARs Filed"]
+        + tracker["Prop Interesting Alerts"]
+        + tracker["Prop Not Interesting Alerts"]
     ),
     2,
 )

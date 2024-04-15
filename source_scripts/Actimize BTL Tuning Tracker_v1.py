@@ -9,13 +9,11 @@ import pandas as pd
 import numpy as np
 
 # Provide name for tuning tracker output
-new_tracker_name = (
-    "Production BTL Tuning Tracker - With Calculations - Python - NEW.xlsx"
-)
+new_tracker_name = "latest_output_btl.xlsx"
 
 # Define file paths
-tracker_fp = "C:/Users/WalshP/OneDrive - Crowe LLP/Desktop/Internal Initiatives/AT Innovation Challenge/TM/Initial Data/Tuning Tracker - BTL/"
-tracker_ufp = "C:/Users/WalshP/OneDrive - Crowe LLP/Desktop/Internal Initiatives/AT Innovation Challenge/TM/New Data Files/"
+tracker_fp = "C:/Users/kadam/Documents/TM_Tuning_Codebase_Consolidation/Initial Data/Tuning Tracker - BTL/"
+tracker_ufp = "C:/Users/kadam/Documents/TM_Tuning_Codebase_Consolidation/New Data/"
 tracker_file_name = "SAM Tuning - Proposed BTL High Priority Thresholds.xlsx"
 delta_file_name = "UAT Alerts - Parsed and Deduped.xlsx"
 sample_file_name = "UAT Alerts - Sampled and Decisioned.xlsx"
